@@ -14,6 +14,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.widget.RemoteViews;
 
@@ -56,6 +57,92 @@ public class IpWidgetProvider extends AppWidgetProvider {
 		updateView(context, appWidgetManager);
 	}
 
+	private WifiConfiguration findHomeWifiConfiguration(WifiManager wifiManager) {
+		List<WifiConfiguration> networks = wifiManager.getConfiguredNetworks();
+		if (networks != null) {
+			for (WifiConfiguration wifiConfiguration : networks) {
+				if (HOME_SSID.equals(wifiConfiguration.SSID)) {
+					return wifiConfiguration;
+				}
+			}
+		}
+		return null;
+	}
+
+	private String getCurrentGateway(Context context) {
+		WifiManager wifiManager = (WifiManager) context
+				.getSystemService(Context.WIFI_SERVICE);
+		if (!wifiManager.isWifiEnabled()) {
+			return "WiFi OFF";
+		}
+		WifiConfiguration wifiConfiguration = findHomeWifiConfiguration(wifiManager);
+		if (wifiConfiguration != null) {
+			try {
+				InetAddress gateway = getGateway(wifiConfiguration);
+				if (gateway == null) {
+					return "NO GATEWAY";
+				} else {
+					return gateway.getHostAddress();
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+				return "ERROR";
+			}
+		}
+		return "HOME NOT FOUND";
+	}
+
+	private InetAddress getGateway(WifiConfiguration wifiConf)
+			throws SecurityException, IllegalArgumentException,
+			NoSuchFieldException, IllegalAccessException,
+			ClassNotFoundException, NoSuchMethodException,
+			InstantiationException, InvocationTargetException {
+
+		Class<? extends WifiConfiguration> wifiConfClass = wifiConf.getClass();
+		Method getStaticIpConfiguration = wifiConfClass
+				.getDeclaredMethod("getStaticIpConfiguration");
+		Object staticIpConfiguration = getStaticIpConfiguration
+				.invoke(wifiConf);
+		if (staticIpConfiguration != null) {
+			Field field = staticIpConfiguration.getClass().getField("gateway");
+			return (InetAddress) field.get(staticIpConfiguration);
+		}
+
+		return null;
+	}
+
+	private void setCurrentGateway(Context context, InetAddress gateway) {
+		try {
+			WifiManager wifiManager = (WifiManager) context
+					.getSystemService(Context.WIFI_SERVICE);
+			if (wifiManager != null && wifiManager.isWifiEnabled()) {
+				WifiConfiguration wifiConfiguration = findHomeWifiConfiguration(wifiManager);
+				setGateway(gateway, wifiConfiguration);
+				wifiManager.updateNetwork(wifiConfiguration);
+				wifiManager.setWifiEnabled(false);
+				wifiManager.setWifiEnabled(true);
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	private void setGateway(InetAddress gateway, WifiConfiguration wifiConf)
+			throws SecurityException, IllegalArgumentException,
+			NoSuchFieldException, IllegalAccessException,
+			ClassNotFoundException, NoSuchMethodException,
+			InstantiationException, InvocationTargetException {
+		Class<? extends WifiConfiguration> wifiConfClass = wifiConf.getClass();
+		Method getStaticIpConfiguration = wifiConfClass
+				.getDeclaredMethod("getStaticIpConfiguration");
+		Object staticIpConfiguration = getStaticIpConfiguration
+				.invoke(wifiConf);
+		if (staticIpConfiguration != null) {
+			Field field = staticIpConfiguration.getClass().getField("gateway");
+			field.set(staticIpConfiguration, gateway);
+		}
+	}
+
 	private void updateView(Context context, AppWidgetManager appWidgetManager) {
 		// Get all ids
 		ComponentName thisWidget = new ComponentName(context,
@@ -78,89 +165,6 @@ public class IpWidgetProvider extends AppWidgetProvider {
 					0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
 			remoteViews.setOnClickPendingIntent(R.id.update, pendingIntent);
 			appWidgetManager.updateAppWidget(widgetId, remoteViews);
-		}
-	}
-
-	private String getCurrentGateway(Context context) {
-		WifiManager wifiManager = (WifiManager) context
-				.getSystemService(Context.WIFI_SERVICE);
-		List<WifiConfiguration> networks = wifiManager.getConfiguredNetworks();
-		if (!wifiManager.isWifiEnabled()) {
-			return "WiFi DOWN";
-		}
-		if (networks != null) {
-			for (WifiConfiguration wifiConfiguration : networks) {
-				if (HOME_SSID.equals(wifiConfiguration.SSID)) {
-					try {
-						InetAddress gateway = getGateway(wifiConfiguration);
-						if (gateway == null) {
-							return "NO GATEWAY";
-						} else {
-							return gateway.getHostAddress();
-						}
-					} catch (Exception e) {
-						e.printStackTrace();
-						return "ERROR";
-					}
-				}
-			}
-		}
-		return "HOME NOT CONFIGURED";
-	}
-
-	private InetAddress getGateway(WifiConfiguration wifiConf)
-			throws SecurityException, IllegalArgumentException,
-			NoSuchFieldException, IllegalAccessException,
-			ClassNotFoundException, NoSuchMethodException,
-			InstantiationException, InvocationTargetException {
-
-		Class<? extends WifiConfiguration> wifiConfClass = wifiConf.getClass();
-		Method getStaticIpConfiguration = wifiConfClass
-				.getDeclaredMethod("getStaticIpConfiguration");
-		Object staticIpConfiguration = getStaticIpConfiguration
-				.invoke(wifiConf);
-		if (staticIpConfiguration != null) {
-			Field field = staticIpConfiguration.getClass().getField("gateway");
-			return (InetAddress) field.get(staticIpConfiguration);
-		}
-
-		return null;
-	}
-
-	private void setGateway(InetAddress gateway, WifiConfiguration wifiConf)
-			throws SecurityException, IllegalArgumentException,
-			NoSuchFieldException, IllegalAccessException,
-			ClassNotFoundException, NoSuchMethodException,
-			InstantiationException, InvocationTargetException {
-		Class<? extends WifiConfiguration> wifiConfClass = wifiConf.getClass();
-		Method getStaticIpConfiguration = wifiConfClass
-				.getDeclaredMethod("getStaticIpConfiguration");
-		Object staticIpConfiguration = getStaticIpConfiguration
-				.invoke(wifiConf);
-		if (staticIpConfiguration != null) {
-			Field field = staticIpConfiguration.getClass().getField("gateway");
-			field.set(staticIpConfiguration, gateway);
-		}
-	}
-
-	private void setCurrentGateway(Context context, InetAddress gateway) {
-		WifiManager wifiManager = (WifiManager) context
-				.getSystemService(Context.WIFI_SERVICE);
-		if (wifiManager != null && wifiManager.isWifiEnabled()) {
-			List<WifiConfiguration> networks = wifiManager
-					.getConfiguredNetworks();
-			for (WifiConfiguration wifiConfiguration : networks) {
-				if (HOME_SSID.equals(wifiConfiguration.SSID)) {
-					try {
-						setGateway(gateway, wifiConfiguration);
-						wifiManager.updateNetwork(wifiConfiguration);
-						wifiManager.setWifiEnabled(false);
-						wifiManager.setWifiEnabled(true);
-					} catch (Exception e) {
-						e.printStackTrace();
-					}
-				}
-			}
 		}
 	}
 }
