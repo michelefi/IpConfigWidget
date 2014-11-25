@@ -1,12 +1,10 @@
 package com.homelinux.michele.ipconfig;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
 import java.util.List;
 
 import android.app.PendingIntent;
@@ -21,6 +19,7 @@ import android.widget.RemoteViews;
 
 public class IpWidgetProvider extends AppWidgetProvider {
 
+	private static final String HOME_SSID = "\"michele\"";
 	private static final String GW_REMOTE = "192.168.1.200";
 	private static final String GW_LOCAL = "192.168.1.254";
 	public static String WIDGET_BUTTON = "com.michele.homelinux.WIDGET_BUTTON";
@@ -37,9 +36,9 @@ public class IpWidgetProvider extends AppWidgetProvider {
 				} else if (GW_REMOTE.equals(gw)) {
 					setCurrentGateway(context, InetAddress.getByName(GW_LOCAL));
 				}
-//				AppWidgetManager appWidgetManager = AppWidgetManager
-//						.getInstance(context);
-//				updateView(context, appWidgetManager);
+				// AppWidgetManager appWidgetManager = AppWidgetManager
+				// .getInstance(context);
+				// updateView(context, appWidgetManager);
 			} catch (UnknownHostException e) {
 				e.printStackTrace();
 			}
@@ -86,13 +85,16 @@ public class IpWidgetProvider extends AppWidgetProvider {
 		WifiManager wifiManager = (WifiManager) context
 				.getSystemService(Context.WIFI_SERVICE);
 		List<WifiConfiguration> networks = wifiManager.getConfiguredNetworks();
+		if (!wifiManager.isWifiEnabled()) {
+			return "WiFi DOWN";
+		}
 		if (networks != null) {
 			for (WifiConfiguration wifiConfiguration : networks) {
-				if ("\"michele\"".equals(wifiConfiguration.SSID)) {
+				if (HOME_SSID.equals(wifiConfiguration.SSID)) {
 					try {
 						InetAddress gateway = getGateway(wifiConfiguration);
 						if (gateway == null) {
-							return "NULL";
+							return "NO GATEWAY";
 						} else {
 							return gateway.getHostAddress();
 						}
@@ -103,24 +105,7 @@ public class IpWidgetProvider extends AppWidgetProvider {
 				}
 			}
 		}
-		return "NULL";
-	}
-
-	private Object getDeclaredField(Object obj, String name)
-			throws SecurityException, NoSuchFieldException,
-			IllegalArgumentException, IllegalAccessException {
-		Field f = obj.getClass().getDeclaredField(name);
-		f.setAccessible(true);
-		Object out = f.get(obj);
-		return out;
-	}
-
-	private Object getField(Object obj, String name) throws SecurityException,
-			NoSuchFieldException, IllegalArgumentException,
-			IllegalAccessException {
-		Field f = obj.getClass().getField(name);
-		Object out = f.get(obj);
-		return out;
+		return "HOME NOT CONFIGURED";
 	}
 
 	private InetAddress getGateway(WifiConfiguration wifiConf)
@@ -128,19 +113,33 @@ public class IpWidgetProvider extends AppWidgetProvider {
 			NoSuchFieldException, IllegalAccessException,
 			ClassNotFoundException, NoSuchMethodException,
 			InstantiationException, InvocationTargetException {
-		Object linkProperties = getField(wifiConf, "linkProperties");
-		if (linkProperties == null)
-			return null;
 
-		ArrayList mRoutes = (ArrayList) getDeclaredField(linkProperties,
-				"mRoutes");
-		if (mRoutes != null && mRoutes.size() > 0) {
-			Object mGateway = mRoutes.get(0);
-			Class cls = Class.forName("android.net.RouteInfo");
-			Method method = cls.getDeclaredMethod("getGateway", null);
-			return (InetAddress) method.invoke(mGateway, null);
-		} else {
-			return null;
+		Class<? extends WifiConfiguration> wifiConfClass = wifiConf.getClass();
+		Method getStaticIpConfiguration = wifiConfClass
+				.getDeclaredMethod("getStaticIpConfiguration");
+		Object staticIpConfiguration = getStaticIpConfiguration
+				.invoke(wifiConf);
+		if (staticIpConfiguration != null) {
+			Field field = staticIpConfiguration.getClass().getField("gateway");
+			return (InetAddress) field.get(staticIpConfiguration);
+		}
+
+		return null;
+	}
+
+	private void setGateway(InetAddress gateway, WifiConfiguration wifiConf)
+			throws SecurityException, IllegalArgumentException,
+			NoSuchFieldException, IllegalAccessException,
+			ClassNotFoundException, NoSuchMethodException,
+			InstantiationException, InvocationTargetException {
+		Class<? extends WifiConfiguration> wifiConfClass = wifiConf.getClass();
+		Method getStaticIpConfiguration = wifiConfClass
+				.getDeclaredMethod("getStaticIpConfiguration");
+		Object staticIpConfiguration = getStaticIpConfiguration
+				.invoke(wifiConf);
+		if (staticIpConfiguration != null) {
+			Field field = staticIpConfiguration.getClass().getField("gateway");
+			field.set(staticIpConfiguration, gateway);
 		}
 	}
 
@@ -151,7 +150,7 @@ public class IpWidgetProvider extends AppWidgetProvider {
 			List<WifiConfiguration> networks = wifiManager
 					.getConfiguredNetworks();
 			for (WifiConfiguration wifiConfiguration : networks) {
-				if ("\"michele\"".equals(wifiConfiguration.SSID)) {
+				if (HOME_SSID.equals(wifiConfiguration.SSID)) {
 					try {
 						setGateway(gateway, wifiConfiguration);
 						wifiManager.updateNetwork(wifiConfiguration);
@@ -163,24 +162,5 @@ public class IpWidgetProvider extends AppWidgetProvider {
 				}
 			}
 		}
-	}
-
-	private void setGateway(InetAddress gateway, WifiConfiguration wifiConf)
-			throws SecurityException, IllegalArgumentException,
-			NoSuchFieldException, IllegalAccessException,
-			ClassNotFoundException, NoSuchMethodException,
-			InstantiationException, InvocationTargetException {
-		Object linkProperties = getField(wifiConf, "linkProperties");
-		if (linkProperties == null)
-			return;
-		Class routeInfoClass = Class.forName("android.net.RouteInfo");
-		Constructor routeInfoConstructor = routeInfoClass
-				.getConstructor(new Class[] { InetAddress.class });
-		Object routeInfo = routeInfoConstructor.newInstance(gateway);
-
-		ArrayList mRoutes = (ArrayList) getDeclaredField(linkProperties,
-				"mRoutes");
-		mRoutes.clear();
-		mRoutes.add(routeInfo);
 	}
 }
